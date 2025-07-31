@@ -39,47 +39,33 @@ case ${SOLARIZED_THEME:-dark} in
     *)     CURRENT_FG='black';;
 esac
 
-# Special Powerline characters
-
+# Special Powerline characters (DISABLED: no separators)
 () {
   local LC_ALL="" LC_CTYPE="en_US.UTF-8"
-  # NOTE: This segment separator character is correct.  In 2012, Powerline changed
-  # the code points they use for their special characters. This is the new code point.
-  # If this is not working for you, you probably have an old version of the
-  # Powerline-patched fonts installed. Download and install the new version.
-  # Do not submit PRs to change this unless you have reviewed the Powerline code point
-  # history and have new information.
-  # This is defined using a Unicode escape sequence so it is unambiguously readable, regardless of
-  # what font the user is viewing this source code in. Do not replace the
-  # escape sequence with a single literal character.
-  # Do not change this! Do not make it '\u2b80'; that is the old, wrong code point.
-  SEGMENT_SEPARATOR=$'\ue0b0'
+  SEGMENT_SEPARATOR=''   # <-- no Powerline symbol
 }
 
-# Begin a segment
-# Takes two arguments, background and foreground. Both can be omitted,
-# rendering default background/foreground.
+# Begin a segment (colors/separators removed; plain text with a leading space)
+# Replace your existing prompt_segment() with this:
 prompt_segment() {
   local bg fg
-  [[ -n $1 ]] && bg="%K{$1}" || bg="%k"
-  [[ -n $2 ]] && fg="%F{$2}" || fg="%f"
-  if [[ $CURRENT_BG != 'NONE' && $1 != $CURRENT_BG ]]; then
-    echo -n " %{$bg%F{$CURRENT_BG}%}$SEGMENT_SEPARATOR%{$fg%} "
-  else
-    echo -n "%{$bg%}%{$fg%} "
+  # ignore color args (since you stripped colors); only print $3
+  [[ -n $3 ]] || return
+
+  # print a space only if this is NOT the first segment
+  if [[ ${PROMPT_FIRST_SEGMENT:-1} -eq 0 ]]; then
+    echo -n " "
   fi
+  PROMPT_FIRST_SEGMENT=0
+
+  echo -n "$3"
   CURRENT_BG=$1
-  [[ -n $3 ]] && echo -n $3
 }
 
-# End the prompt, closing any open segments
+
+# End the prompt (no separator, no color resets)
 prompt_end() {
-  if [[ -n $CURRENT_BG ]]; then
-    echo -n " %{%k%F{$CURRENT_BG}%}$SEGMENT_SEPARATOR"
-  else
-    echo -n "%{%k%}"
-  fi
-  echo -n "%{%f%}"
+  echo -n ""
   CURRENT_BG=''
 }
 
@@ -89,8 +75,12 @@ prompt_end() {
 # Context: user@hostname (who am I and where am I)
 prompt_context() {
   if [[ "$USER" != "$DEFAULT_USER" || -n "$SSH_CLIENT" ]]; then
-    prompt_segment black default "%(!.%{%F{yellow}%}.)%n@%m"
+    prompt_segment black default "%n@%m"
   fi
+}
+
+
+parse_git_dirty() {
 }
 
 # Git: branch/detached head, dirty status
@@ -110,11 +100,8 @@ prompt_git() {
     repo_path=$(git rev-parse --git-dir 2>/dev/null)
     dirty=$(parse_git_dirty)
     ref=$(git symbolic-ref HEAD 2> /dev/null) || ref="➦ $(git rev-parse --short HEAD 2> /dev/null)"
-    if [[ -n $dirty ]]; then
-      prompt_segment yellow black
-    else
-      prompt_segment green $CURRENT_FG
-    fi
+    # neutral segment (no colors)
+    prompt_segment "" "" 
 
     if [[ -e "${repo_path}/BISECT_LOG" ]]; then
       mode=" <B>"
@@ -130,83 +117,18 @@ prompt_git() {
     zstyle ':vcs_info:*' enable git
     zstyle ':vcs_info:*' get-revision true
     zstyle ':vcs_info:*' check-for-changes true
-    zstyle ':vcs_info:*' stagedstr '✚'
-    zstyle ':vcs_info:*' unstagedstr '●'
+    zstyle ':vcs_info:*' stagedstr '⦿'
+    zstyle ':vcs_info:*' unstagedstr '⦾'
     zstyle ':vcs_info:*' formats ' %u%c'
     zstyle ':vcs_info:*' actionformats ' %u%c'
     vcs_info
-    echo -n "${ref/refs\/heads\//$PL_BRANCH_CHAR }${vcs_info_msg_0_%% }${mode}"
-  fi
-}
-
-prompt_bzr() {
-    (( $+commands[bzr] )) || return
-    if (bzr status >/dev/null 2>&1); then
-        status_mod=`bzr status | head -n1 | grep "modified" | wc -m`
-        status_all=`bzr status | head -n1 | wc -m`
-        revision=`bzr log | head -n2 | tail -n1 | sed 's/^revno: //'`
-        if [[ $status_mod -gt 0 ]] ; then
-            prompt_segment yellow black
-            echo -n "bzr@"$revision "✚ "
-        else
-            if [[ $status_all -gt 0 ]] ; then
-                prompt_segment yellow black
-                echo -n "bzr@"$revision
-            else
-                prompt_segment green black
-                echo -n "bzr@"$revision
-            fi
-        fi
-    fi
-}
-
-prompt_hg() {
-  (( $+commands[hg] )) || return
-  local rev st branch
-  if $(hg id >/dev/null 2>&1); then
-    if $(hg prompt >/dev/null 2>&1); then
-      if [[ $(hg prompt "{status|unknown}") = "?" ]]; then
-        # if files are not added
-        prompt_segment red white
-        st='±'
-      elif [[ -n $(hg prompt "{status|modified}") ]]; then
-        # if any modification
-        prompt_segment yellow black
-        st='±'
-      else
-        # if working copy is clean
-        prompt_segment green $CURRENT_FG
-      fi
-      echo -n $(hg prompt "☿ {rev}@{branch}") $st
-    else
-      st=""
-      rev=$(hg id -n 2>/dev/null | sed 's/[^-0-9]//g')
-      branch=$(hg id -b 2>/dev/null)
-      if `hg st | grep -q "^\?"`; then
-        prompt_segment red black
-        st='±'
-      elif `hg st | grep -q "^[MA]"`; then
-        prompt_segment yellow black
-        st='±'
-      else
-        prompt_segment green $CURRENT_FG
-      fi
-      echo -n "☿ $rev@$branch" $st
-    fi
+    echo -n " ${ref/refs\/heads\//$PL_BRANCH_CHAR }${vcs_info_msg_0_%% }${mode}"
   fi
 }
 
 # Dir: current working directory
 prompt_dir() {
-  prompt_segment blue $CURRENT_FG '%~'
-}
-
-# Virtualenv: current working virtualenv
-prompt_virtualenv() {
-  local virtualenv_path="$VIRTUAL_ENV"
-  if [[ -n $virtualenv_path && -n $VIRTUAL_ENV_DISABLE_PROMPT ]]; then
-    prompt_segment blue black "(`basename $virtualenv_path`)"
-  fi
+  prompt_segment "" "" '%~'
 }
 
 # Status:
@@ -216,53 +138,20 @@ prompt_virtualenv() {
 prompt_status() {
   local -a symbols
 
-  [[ $RETVAL -ne 0 ]] && symbols+="%{%F{red}%}✘"
-  [[ $UID -eq 0 ]] && symbols+="%{%F{yellow}%}⚡"
-  [[ $(jobs -l | wc -l) -gt 0 ]] && symbols+="%{%F{cyan}%}⚙"
+  [[ $RETVAL -ne 0 ]] && symbols+="✘"
+  [[ $UID -eq 0 ]] && symbols+="⚡"
+  [[ $(jobs -l | wc -l) -gt 0 ]] && symbols+="⚙"
 
-  [[ -n "$symbols" ]] && prompt_segment black default "$symbols"
+  [[ -n "$symbols" ]] && prompt_segment "" "" "$symbols"
 }
 
-#AWS Profile:
-# - display current AWS_PROFILE name
-# - displays yellow on red if profile name contains 'production' or
-#   ends in '-prod'
-# - displays black on green otherwise
+#AWS Profile (no colors)
 prompt_aws() {
   [[ -z "$AWS_PROFILE" ]] && return
-  case "$AWS_PROFILE" in
-    *-prod|*production*) prompt_segment red yellow  "AWS: $AWS_PROFILE" ;;
-    *) prompt_segment green black "AWS: $AWS_PROFILE" ;;
-  esac
+  prompt_segment "" "" "AWS: $AWS_PROFILE"
 }
 
-
 # Usage: prompt-length TEXT [COLUMNS]
-#
-# If you run `print -P TEXT`, how many characters will be printed
-# on the last line?
-#
-# Or, equivalently, if you set PROMPT=TEXT with prompt_subst
-# option unset, on which column will the cursor be?
-#
-# The second argument specifies terminal width. Defaults to the
-# real terminal width.
-#
-# Assumes that `%{%}` and `%G` don't lie.
-#
-# Examples:
-#
-#   prompt-length ''            => 0
-#   prompt-length 'abc'         => 3
-#   prompt-length $'abc\nxy'    => 2
-#   prompt-length '❎'          => 2
-#   prompt-length $'\t'         => 8
-#   prompt-length $'\u274E'     => 2
-#   prompt-length '%F{red}abc'  => 3
-#   prompt-length $'%{a\b%Gb%}' => 1
-#   prompt-length '%D'          => 8
-#   prompt-length '%1(l..ab)'   => 2
-#   prompt-length '%(!.a.)'     => 1 if root, 0 if not
 function prompt-length() {
   emulate -L zsh
   local COLUMNS=${2:-$COLUMNS}
@@ -282,16 +171,12 @@ function prompt-length() {
 }
 
 # Usage: fill-line LEFT RIGHT
-#
-# Prints LEFT<spaces>RIGHT with enough spaces in the middle
-# to fill a terminal line.
 function fill-line() {
   emulate -L zsh
   local left_len=$(prompt-length $1)
   local right_len=$(prompt-length $2 9999)
   local pad_len=$((COLUMNS - left_len - right_len - ${ZLE_RPROMPT_INDENT:-1}))
   if (( pad_len < 1 )); then
-    # Not enough space for the right part. Drop it.
     echo -E - ${1}
   else
     local pad=${(pl.$pad_len.. .)}  # pad_len spaces
@@ -307,6 +192,8 @@ function preexec() {
 }
 
 function precmd() {
+  LAST_STATUS=$?
+
   if [ $cmd_start ]; then
     local now=$(($(print -P %D{%s%6.}) / 1000))
     local d_ms=$(($now - $cmd_start))
@@ -330,14 +217,27 @@ function precmd() {
   fi
 }
 
+# Starship-like prompt symbol for the LEFT side
+prompt_char() {
+  local sym='❯'
+  [[ $KEYMAP = vicmd ]] && sym='❮'
+  if [[ ${RETVAL:-$?} -ne 0 ]]; then
+    # red only on error; wrap in %{ %} so width calc is correct
+    echo -n " %{%F{red}%}${sym}%{%f%}"
+  else
+    echo -n " ${sym}"
+  fi
+}
+
 ## Main prompt
 build_prompt() {
+  PROMPT_FIRST_SEGMENT=1
   RETVAL=$?
   prompt_status
-  prompt_virtualenv
   prompt_context
   prompt_dir
   prompt_git
+  prompt_char
   prompt_end
 }
 
@@ -348,15 +248,21 @@ PROMPT_TOP_LEFT='%{%f%b%k%}$(build_prompt)'
 # Requires: prompt_percent and no_prompt_subst.
 function set-prompt() {
   emulate -L zsh
-  local git_branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null)"
-  git_branch=${${git_branch//\%/%%}/\\/\\\\\\}  # escape '%' and '\'
 
-  local top_left='%F{blue}%~%f'
-  local top_right="%(?..[%?]) %F{yellow}${cmd_time} %F{yellow}%D{%Y-%m-%d %H:%M:%S}"
-  local bottom_left=" "
+  local last_status=${LAST_STATUS:-0}
+
+  local right_status=""
+  (( last_status )) && right_status="[${last_status}] "
+
+  local right_dur=""
+  [[ -n $cmd_time ]] && right_dur="${cmd_time} "
+
+  local top_right="${right_status}${right_dur}%D{%Y-%m-%d %H:%M:%S}"
+
+  local bottom_left=""
   local bottom_right=""
 
-  PROMPT="$(fill-line "%{%f%b%k%}$(build_prompt)" "$top_right")"$'\n'$bottom_left
+  PROMPT="%{%S%}$(fill-line "%{%f%b%k%}$(build_prompt)" "$top_right")%{%s%}"$'\n'$bottom_left
   RPROMPT=$bottom_right
 }
 
