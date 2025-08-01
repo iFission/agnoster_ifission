@@ -131,26 +131,6 @@ prompt_dir() {
   prompt_segment "" "" '%~'
 }
 
-# Status:
-# - was there an error
-# - am I root
-# - are there background jobs?
-prompt_status() {
-  local -a symbols
-
-  [[ $RETVAL -ne 0 ]] && symbols+="✘"
-  [[ $UID -eq 0 ]] && symbols+="⚡"
-  [[ $(jobs -l | wc -l) -gt 0 ]] && symbols+="⚙"
-
-  [[ -n "$symbols" ]] && prompt_segment "" "" "$symbols"
-}
-
-#AWS Profile (no colors)
-prompt_aws() {
-  [[ -z "$AWS_PROFILE" ]] && return
-  prompt_segment "" "" "AWS: $AWS_PROFILE"
-}
-
 # Usage: prompt-length TEXT [COLUMNS]
 function prompt-length() {
   emulate -L zsh
@@ -233,7 +213,6 @@ prompt_char() {
 build_prompt() {
   PROMPT_FIRST_SEGMENT=1
   RETVAL=$?
-  prompt_status
   prompt_context
   prompt_dir
   prompt_git
